@@ -1,6 +1,11 @@
 .build/
-.swiftpm/
-DerivedData/
+.build_ipad/
+**/DerivedData/
+**/.build/
+**/.build_ipad/
+**/.swiftpm/
 *.xcactivitylog
 LogStoreManifest.plist
 .DS_Store
+*.txt
+*.log
