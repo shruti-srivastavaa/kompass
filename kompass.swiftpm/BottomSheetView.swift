@@ -60,12 +60,13 @@ struct BottomSheetView<Content: View>: View {
             }
             .frame(width: geometry.size.width, height: maxHeight, alignment: .top)
             .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.black)
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color(red: 0.05, green: 0.05, blue: 0.05)) // Deep AMOLED gray/black
+                    .shadow(color: .black.opacity(0.4), radius: 10, y: -5)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: 20)
                     .stroke(Color(white: 0.15), lineWidth: 0.5)
             )
             .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: -4)
@@ -112,12 +113,9 @@ struct BottomSheetView<Content: View>: View {
         }
         
         withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
-            if closestDetent == .peek && currentDetent == .peek {
-                isOpen = false
-            } else {
-                isOpen = true
-                currentDetent = closestDetent
-            }
+            // Always keep open when snapping to a detent
+            if !isOpen { isOpen = true }
+            currentDetent = closestDetent
         }
     }
 }

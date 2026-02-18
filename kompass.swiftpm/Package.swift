@@ -17,10 +17,11 @@ let package = Package(
             name: "kompass",
             targets: ["AppModule"],
             bundleIdentifier: "com.aadishah.kompass",
+            teamIdentifier: "W4CGNMV2HK",
             displayVersion: "1.0",
             bundleVersion: "1",
             appIcon: .asset("AppIcon"),
-            accentColor: .presetColor(.green),
+            accentColor: .asset("AccentColor"),
             supportedDeviceFamilies: [
                 .pad,
                 .phone

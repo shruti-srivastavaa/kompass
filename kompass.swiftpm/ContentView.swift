@@ -192,6 +192,56 @@ struct ContentView: View {
             if isNavigating && !routeSteps.isEmpty {
                 navigationHeader
             }
+            
+            // MARK: - Dynamic Island
+            if isNavigating && !routeSteps.isEmpty {
+                DynamicIslandView(
+                    currentInstruction: routeSteps[currentStepIndex].instructions.isEmpty
+                        ? "Continue on route"
+                        : routeSteps[currentStepIndex].instructions,
+                    nextInstruction: currentStepIndex + 1 < routeSteps.count
+                        ? routeSteps[currentStepIndex + 1].instructions
+                        : nil,
+                    etaSeconds: routeInfo?.expectedTravelTime ?? 0,
+                    distanceMeters: routeInfo?.distance ?? 0,
+                    stepIndex: currentStepIndex,
+                    totalSteps: routeSteps.count
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            
+            // MARK: - Compass FAB (during navigation)
+            if isNavigating && !showCompass {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                showCompass = true
+                            }
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(Color(white: 0.10))
+                                    .frame(width: 52, height: 52)
+                                    .overlay(Circle().stroke(Color(white: 0.22), lineWidth: 1))
+                                    .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
+                                Image(systemName: "safari")
+                                    .font(.system(size: 22, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        .padding(.trailing, 16)
+                        .padding(.top, 60)
+                    }
+                    Spacer()
+                }
+            }
+            
+            // MARK: - Full-Screen Compass Overlay
+            if showCompass {
+                compassOverlay
+            }
         }
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showDirections) {
@@ -264,6 +314,7 @@ struct ContentView: View {
                 RoundedRectangle(cornerRadius: 28)
                     .fill(Color(white: 0.1))
             )
+            .clipShape(RoundedRectangle(cornerRadius: 28))
             .overlay(
                 RoundedRectangle(cornerRadius: 28)
                     .stroke(Color(white: 0.18), lineWidth: 1)
@@ -384,7 +435,7 @@ struct ContentView: View {
         .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 18)
-                .fill(.ultraThinMaterial)
+                .fill(Color(white: 0.1))
                 .shadow(color: Color.black.opacity(0.08), radius: 8)
         )
         .padding(.horizontal, 12)
@@ -464,6 +515,19 @@ struct ContentView: View {
             
             Divider()
             Toggle("Simulate Offline", isOn: $networkManager.isSimulatedOffline)
+            
+            if !routeCoordinates.isEmpty {
+                Toggle("Simulate Drive", isOn: Binding(
+                    get: { locationManager.isSimulating },
+                    set: { newValue in
+                        if newValue {
+                            locationManager.startSimulation(route: routeCoordinates)
+                        } else {
+                            locationManager.stopSimulation()
+                        }
+                    }
+                ))
+            }
         } label: {
             Image(systemName: "square.2.layers.3d")
                 .font(.system(size: 16, weight: .medium))
@@ -852,44 +916,131 @@ struct ContentView: View {
     }
     
     // MARK: - Navigation Header
+    @State private var navSheetVisible = false
+
+    
     private var navigationHeader: some View {
         VStack {
-            VStack(alignment: .leading, spacing: 8) {
-                // Current instruction
-                Text(routeSteps[currentStepIndex].instructions.isEmpty ? "Continue on route" : routeSteps[currentStepIndex].instructions)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.white)
-                    .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            
+            VStack(spacing: 0) {
+                // Drag handle
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color(white: 0.35))
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 10)
+                    .padding(.bottom, 14)
                 
-                HStack {
-                    if currentStepIndex > 0 {
-                        Button(action: { currentStepIndex -= 1 }) {
-                            Image(systemName: "chevron.left.circle.fill")
-                                .font(.title2)
-                                .foregroundColor(.white.opacity(0.9))
+                // MARK: Turn Instruction Card
+                HStack(spacing: 14) {
+                    // Direction icon
+                    ZStack {
+                        Circle()
+                            .fill(Color(white: 0.15))
+                            .frame(width: 52, height: 52)
+                        Image(systemName: turnIcon(for: routeSteps[currentStepIndex].instructions))
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(routeSteps[currentStepIndex].instructions.isEmpty
+                             ? "Continue on route"
+                             : routeSteps[currentStepIndex].instructions)
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        
+
+                    }
+                    
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
+                
+                // Divider
+                Rectangle()
+                    .fill(Color(white: 0.18))
+                    .frame(height: 1)
+                    .padding(.horizontal, 16)
+                
+                // MARK: Step Progress Row
+                HStack(spacing: 16) {
+                    // Step navigation
+                    HStack(spacing: 12) {
+                        Button(action: { if currentStepIndex > 0 { currentStepIndex -= 1 } }) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(currentStepIndex > 0 ? .white : Color(white: 0.3))
+                                .frame(width: 34, height: 34)
+                                .background(Color(white: 0.15))
+                                .clipShape(Circle())
                         }
+                        .disabled(currentStepIndex == 0)
+                        
+                        // Progress
+                        VStack(spacing: 4) {
+                            Text("Step \(currentStepIndex + 1) / \(routeSteps.count)")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(white: 0.55))
+                            
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Capsule()
+                                        .fill(Color(white: 0.15))
+                                        .frame(height: 4)
+                                    Capsule()
+                                        .fill(Color.white)
+                                        .frame(width: geo.size.width * CGFloat(currentStepIndex + 1) / CGFloat(max(routeSteps.count, 1)), height: 4)
+                                        .animation(.spring(response: 0.4), value: currentStepIndex)
+                                }
+                            }
+                            .frame(height: 4)
+                            .frame(width: 80)
+                        }
+                        
+                        Button(action: { if currentStepIndex < routeSteps.count - 1 { currentStepIndex += 1 } }) {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(currentStepIndex < routeSteps.count - 1 ? .white : Color(white: 0.3))
+                                .frame(width: 34, height: 34)
+                                .background(Color(white: 0.15))
+                                .clipShape(Circle())
+                        }
+                        .disabled(currentStepIndex >= routeSteps.count - 1)
                     }
                     
                     Spacer()
                     
-                    Text("Step \(currentStepIndex + 1) of \(routeSteps.count)")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.8))
-                    
-                    Spacer()
-                    
-                    if currentStepIndex < routeSteps.count - 1 {
-                        Button(action: { currentStepIndex += 1 }) {
-                            Image(systemName: "chevron.right.circle.fill")
-                                .font(.title2)
-                                .foregroundColor(.white.opacity(0.9))
+                    // ETA
+                    if let info = routeInfo {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(formatTime(info.expectedTravelTime))
+                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                            Text(formatDistance(info.distance))
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundColor(Color(white: 0.45))
                         }
                     }
                 }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
                 
-                // End navigation
+                // Divider
+                Rectangle()
+                    .fill(Color(white: 0.18))
+                    .frame(height: 1)
+                    .padding(.horizontal, 16)
+                
+                // MARK: End Navigation Button
                 Button {
-                    withAnimation {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                        navSheetVisible = false
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                         isNavigating = false
                         routeCoordinates = []
                         routeSteps = []
@@ -897,25 +1048,160 @@ struct ContentView: View {
                         currentStepIndex = 0
                     }
                 } label: {
-                    Text("End Navigation")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(Color.red.opacity(0.8))
-                        .clipShape(Capsule())
+                    HStack(spacing: 8) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .bold))
+                        Text("End Navigation")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.red, Color.red.opacity(0.8)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
             }
-            .padding()
             .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.white.gradient)
+                UnevenRoundedRectangle(topLeadingRadius: 32, topTrailingRadius: 32)
+                    .fill(Color(red: 0.05, green: 0.05, blue: 0.05))
+                    .shadow(color: .black.opacity(0.5), radius: 20, y: -5)
             )
-            .padding(.horizontal)
-            .padding(.top, 52)
-            
-            Spacer()
+            .offset(y: navSheetVisible ? 0 : 400)
+            .animation(.spring(response: 0.55, dampingFraction: 0.82), value: navSheetVisible)
         }
+        .edgesIgnoringSafeArea(.bottom)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                navSheetVisible = true
+
+            }
+        }
+    }
+    
+    /// Map turn instruction text to an appropriate SF Symbol
+    private func turnIcon(for instruction: String) -> String {
+        let lower = instruction.lowercased()
+        if lower.contains("right") { return "arrow.turn.up.right" }
+        if lower.contains("left") { return "arrow.turn.up.left" }
+        if lower.contains("u-turn") || lower.contains("u turn") { return "arrow.uturn.down" }
+        if lower.contains("merge") { return "arrow.merge" }
+        if lower.contains("ramp") || lower.contains("exit") { return "arrow.up.right" }
+        if lower.contains("arrive") || lower.contains("destination") { return "flag.checkered" }
+        return "arrow.up"
+    }
+    
+    // MARK: - Full-Screen Compass Overlay
+    private var compassOverlay: some View {
+        ZStack {
+            // Dark blurred background
+            Color.black.opacity(0.85)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showCompass = false
+                    }
+                }
+            
+            VStack(spacing: 24) {
+                // Header
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Compass")
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                        if let dest = endLocation {
+                            Text("Pointing to \(dest.name)")
+                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                                .foregroundColor(Color(white: 0.5))
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            showCompass = false
+                        }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 36, height: 36)
+                            .background(Color(white: 0.2))
+                            .clipShape(Circle())
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+                
+                Spacer()
+                
+                // Compass
+                CompassView(
+                    locationManager: locationManager,
+                    targetCoordinate: endLocation?.coordinate
+                )
+                
+                // Destination label
+                if let dest = endLocation {
+                    VStack(spacing: 6) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "mappin.circle.fill")
+                                .foregroundColor(.white)
+                            Text(dest.name)
+                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                        }
+                        if let addr = dest.address {
+                            Text(addr)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundColor(Color(white: 0.45))
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(white: 0.12))
+                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(white: 0.2), lineWidth: 1))
+                    )
+                }
+                
+                Spacer()
+                
+                // Back to Map button
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showCompass = false
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "map.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Back to Map")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 32)
+            }
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.95)))
     }
     
     // MARK: - Directions Sheet
@@ -1113,93 +1399,88 @@ struct ContentView: View {
         let startPlacemark = MKPlacemark(coordinate: start.coordinate)
         let endPlacemark = MKPlacemark(coordinate: end.coordinate)
         
-        let nativeModes: [(ExtendedTransportMode, MKDirectionsTransportType)] = [
-            (.drive, .automobile),
-            (.walk, .walking),
-            (.transit, .transit),
-            (.cycle, .walking),
-            (.scooter, .walking),
-            (.motorcycle, .automobile),
-            (.ferry, .transit)
-        ]
-        
         Task {
-            var options: [RouteOption] = []
+            // Calculate the 3 base transport types sequentially (MKRoute isn't Sendable)
+            var driveData: (coords: [CLLocationCoordinate2D], steps: [SimpleRouteStep], time: TimeInterval, dist: Double)?
+            var walkData: (coords: [CLLocationCoordinate2D], steps: [SimpleRouteStep], time: TimeInterval, dist: Double)?
+            var transitData: (coords: [CLLocationCoordinate2D], steps: [SimpleRouteStep], time: TimeInterval, dist: Double)?
             
-            for (mode, mkType) in nativeModes {
+            let types: [(String, MKDirectionsTransportType)] = [
+                ("drive", .automobile),
+                ("walk", .walking),
+                ("transit", .transit)
+            ]
+            
+            for (name, mkType) in types {
                 let request = MKDirections.Request()
                 request.source = MKMapItem(placemark: startPlacemark)
                 request.destination = MKMapItem(placemark: endPlacemark)
                 request.transportType = mkType
                 
                 let directions = MKDirections(request: request)
-                
                 do {
                     let response = try await directions.calculate()
                     if let route = response.routes.first {
-                        let pointCount = route.polyline.pointCount
-                        var coords = [CLLocationCoordinate2D](repeating: CLLocationCoordinate2D(), count: pointCount)
-                        route.polyline.getCoordinates(&coords, range: NSRange(location: 0, length: pointCount))
-                        
+                        let count = route.polyline.pointCount
+                        var coords = [CLLocationCoordinate2D](repeating: CLLocationCoordinate2D(), count: count)
+                        route.polyline.getCoordinates(&coords, range: NSRange(location: 0, length: count))
                         let steps = route.steps.map { SimpleRouteStep(instructions: $0.instructions) }
+                        let data = (coords: coords, steps: steps, time: route.expectedTravelTime, dist: route.distance)
                         
-                        // Adjust travel time based on mode multiplier (approximation)
-                        let adjustedTime = route.expectedTravelTime * mode.speedMultiplier
-                        
-                        let option = RouteOption(
-                            mode: mode,
-                            travelTime: adjustedTime,
-                            distance: route.distance,
-                            steps: steps,
-                            polylineCoords: coords,
-                            isSelected: mode == .drive
-                        )
-                        options.append(option)
+                        switch name {
+                        case "drive": driveData = data
+                        case "walk": walkData = data
+                        case "transit": transitData = data
+                        default: break
+                        }
                     }
                 } catch {
-                    print("No route for \(mode.rawValue): \(error.localizedDescription)")
-                }
-            }
-            
-            // Add ride-share options (based on driving route distance)
-            if let driveOption = options.first(where: { $0.mode == .drive }) {
-                let distKm = driveOption.distance / 1000.0
-                
-                for provider in RideShareService.Provider.allCases {
-                    let fare = RideShareService.estimateFare(provider: provider, distanceKm: distKm)
-                    let mode: ExtendedTransportMode = provider == .uber ? .uber : .lyft
-                    
-                    let rideOption = RouteOption(
-                        mode: mode,
-                        travelTime: driveOption.travelTime * 1.15, // slightly longer for pickup
-                        distance: driveOption.distance,
-                        steps: [],
-                        polylineCoords: driveOption.polylineCoords,
-                        fareEstimate: RideShareService.formatFare(fare)
-                    )
-                    options.append(rideOption)
-                }
-                
-                // Add cycling (approximate: walking route * 0.35 time)
-                if let walkOption = options.first(where: { $0.mode == .walk }) {
-                    let cycleOption = RouteOption(
-                        mode: .cycle,
-                        travelTime: walkOption.travelTime * 0.35,
-                        distance: walkOption.distance,
-                        steps: walkOption.steps,
-                        polylineCoords: walkOption.polylineCoords
-                    )
-                    options.append(cycleOption)
+                    print("No route for \(name): \(error.localizedDescription)")
                 }
             }
             
             await MainActor.run {
+                var options: [RouteOption] = []
+                
+                // Drive + derived modes
+                if let d = driveData {
+                    options.append(RouteOption(mode: .drive, travelTime: d.time, distance: d.dist, steps: d.steps, polylineCoords: d.coords, isSelected: true))
+                    options.append(RouteOption(mode: .motorcycle, travelTime: d.time * 0.85, distance: d.dist, steps: d.steps, polylineCoords: d.coords))
+                    options.append(RouteOption(mode: .scooter, travelTime: d.time * 1.3, distance: d.dist, steps: d.steps, polylineCoords: d.coords))
+                    
+                    let distKm = d.dist / 1000.0
+                    for provider in RideShareService.Provider.allCases {
+                        let fare = RideShareService.estimateFare(provider: provider, distanceKm: distKm)
+                        let mode: ExtendedTransportMode = provider == .uber ? .uber : .lyft
+                        options.append(RouteOption(mode: mode, travelTime: d.time * 1.15, distance: d.dist, steps: [], polylineCoords: d.coords, fareEstimate: RideShareService.formatFare(fare)))
+                    }
+                }
+                
+                // Walk + cycle
+                if let w = walkData {
+                    options.append(RouteOption(mode: .walk, travelTime: w.time, distance: w.dist, steps: w.steps, polylineCoords: w.coords))
+                    options.append(RouteOption(mode: .cycle, travelTime: w.time * 0.35, distance: w.dist, steps: w.steps, polylineCoords: w.coords))
+                }
+                
+                // Transit + ferry
+                if let t = transitData {
+                    options.append(RouteOption(mode: .transit, travelTime: t.time, distance: t.dist, steps: t.steps, polylineCoords: t.coords))
+                    options.append(RouteOption(mode: .ferry, travelTime: t.time * 1.5, distance: t.dist, steps: t.steps, polylineCoords: t.coords))
+                }
+                
                 self.routeOptions = options
                 self.isCalculatingRoutes = false
                 
-                // Auto-select the first native route
-                if let first = options.first(where: { $0.mode == extendedMode }) {
-                    selectRouteOption(first)
+                if options.isEmpty && networkManager.isEffectiveOffline {
+                    showOfflineAlert = true
+                    return
+                }
+                
+                // Auto-select
+                if let match = options.first(where: { $0.mode == extendedMode }) {
+                    selectRouteOption(match)
+                } else if let drive = options.first(where: { $0.mode == .drive }) {
+                    selectRouteOption(drive)
                 } else if let first = options.first {
                     selectRouteOption(first)
                 }

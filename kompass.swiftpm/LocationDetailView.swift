@@ -197,7 +197,7 @@ struct ActionButton: View {
                     .font(.system(size: 18))
                     .frame(width: 48, height: 48)
                     .background(isPrimary ? color : Color(white: 0.12))
-                    .foregroundColor(isPrimary ? .white : color)
+                    .foregroundColor(isPrimary ? .black : color)
                     .clipShape(Circle())
                     .overlay(Circle().stroke(isPrimary ? Color.clear : Color(white: 0.2), lineWidth: 1))
                 

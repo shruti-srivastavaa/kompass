@@ -1,110 +1,167 @@
 import SwiftUI
+import CoreLocation
 
 struct CompassView: View {
-    var heading: Double // The magnetic heading of the device
-    var targetBearing: Double? // The bearing to the destination
-    var distance: Double? // Distance in meters
+    @ObservedObject var locationManager: LocationManager
+    var targetCoordinate: CLLocationCoordinate2D?
+    @State private var isBreathing = false
     
     var body: some View {
-        VStack(spacing: 20) {
+        let magnetic = locationManager.lastHeading?.magneticHeading ?? 0
+        let trueH = locationManager.lastHeading?.trueHeading ?? -1
+        let heading = trueH >= 0 ? trueH : magnetic
+        
+        let bearing: Double? = targetCoordinate.flatMap { locationManager.bearingTo(target: $0) }
+        let distance: Double? = targetCoordinate.flatMap { locationManager.distanceTo($0) }
+        
+        VStack(spacing: 24) {
             ZStack {
-                // Outer Ring
+                // Outer glow ring
                 Circle()
-                    .stroke(LinearGradient(colors: [.white, .gray], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 4)
-                    .frame(width: 220, height: 220)
-                    .overlay(
-                        Circle()
-                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    .stroke(
+                        AngularGradient(
+                            colors: [.white.opacity(0.6), .gray.opacity(0.2), .white.opacity(0.6)],
+                            center: .center
+                        ),
+                        lineWidth: 3
+                    )
+                    .frame(width: 260, height: 260)
+                    .scaleEffect(isBreathing ? 1.05 : 0.95)
+                    .opacity(isBreathing ? 0.8 : 0.5)
+                    .animation(
+                        .easeInOut(duration: 2.5).repeatForever(autoreverses: true),
+                        value: isBreathing
                     )
                 
-                // Cardinal Directions
-                ForEach(["N", "E", "S", "W"], id: \.self) { direction in
-                    Text(direction)
-                        .font(.system(size: 16, weight: .black, design: .rounded))
-                        .foregroundColor(.primary)
-                        .offset(y: -95)
-                        .rotationEffect(.degrees(angleForDirection(direction)))
-                }
+                // Inner ring
+                Circle()
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    .frame(width: 230, height: 230)
+                    .scaleEffect(isBreathing ? 1.02 : 0.98)
+                    .animation(
+                        .easeInOut(duration: 2.5).repeatForever(autoreverses: true).delay(0.1),
+                        value: isBreathing
+                    )
                 
-                // Compass markings
-                ForEach(0..<60) { i in
+                // Tick marks
+                ForEach(0..<72, id: \.self) { i in
+                    let isMajor = i % 18 == 0
+                    let isMinor = i % 9 == 0
                     Rectangle()
-                        .fill(i % 15 == 0 ? Color.primary : Color.primary.opacity(0.4))
-                        .frame(width: 2, height: i % 15 == 0 ? 15 : 8)
-                        .offset(y: -105)
-                        .rotationEffect(.degrees(Double(i) * 6))
+                        .fill(isMajor ? Color.white : (isMinor ? Color.white.opacity(0.5) : Color.white.opacity(0.2)))
+                        .frame(width: isMajor ? 2.5 : 1.5, height: isMajor ? 18 : (isMinor ? 12 : 6))
+                        .offset(y: -118)
+                        .rotationEffect(.degrees(Double(i) * 5))
                 }
                 
-                // Destination Pointer (the fun interactive part!)
-                if let target = targetBearing {
-                    let relativeBearing = target - heading
+                // Cardinal directions
+                ForEach(Array(["N", "E", "S", "W"].enumerated()), id: \.offset) { index, dir in
+                    Text(dir)
+                        .font(.system(size: dir == "N" ? 22 : 16, weight: .black, design: .rounded))
+                        .foregroundColor(dir == "N" ? .red : .white)
+                        .offset(y: -96)
+                        .rotationEffect(.degrees(Double(index) * 90))
+                }
+                
+                // Intercardinal directions
+                ForEach(Array(["NE", "SE", "SW", "NW"].enumerated()), id: \.offset) { index, dir in
+                    Text(dir)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.4))
+                        .offset(y: -96)
+                        .rotationEffect(.degrees(45 + Double(index) * 90))
+                }
+                
+                // Degree labels at 30° intervals
+                ForEach([30, 60, 120, 150, 210, 240, 300, 330], id: \.self) { deg in
+                    Text("\(deg)")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.3))
+                        .offset(y: -82)
+                        .rotationEffect(.degrees(Double(deg)))
+                }
+                
+                // Destination pointer arrow
+                if let targetBearing = bearing {
+                    let normalizedBearing = ((targetBearing - heading) + 360).truncatingRemainder(dividingBy: 360)
                     
-                    VStack {
+                    ZStack {
+                        // Glow trail
                         Image(systemName: "location.north.fill")
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(width: 40, height: 40)
-                            .foregroundColor(.white)
-                            .shadow(color: .orange.opacity(0.6), radius: 10)
-                            .offset(y: -130) // Positioned outside/on the edge
+                            .frame(width: 44, height: 44)
+                            .foregroundColor(.orange.opacity(0.3))
+                            .blur(radius: 8)
+                            .offset(y: -138)
+                        
+                        // Main arrow
+                        Image(systemName: "location.north.fill")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 36, height: 36)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.orange, .yellow],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .shadow(color: .orange.opacity(0.8), radius: 12)
+                            .offset(y: -138)
                     }
-                    .rotationEffect(.degrees(relativeBearing))
-                    .animation(.spring(response: 0.6, dampingFraction: 0.5), value: relativeBearing)
+                    .rotationEffect(.degrees(normalizedBearing))
                 }
                 
-                // Device Heading indicator (Center)
-                VStack {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 40, weight: .bold))
-                        .foregroundColor(.white)
-                        .shadow(color: .white.opacity(0.4), radius: 5)
+                // Center device heading needle
+                VStack(spacing: 2) {
+                    Triangle()
+                        .fill(Color.red)
+                        .frame(width: 14, height: 18)
+                        .shadow(color: .red.opacity(0.5), radius: 4)
+                    
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 8, height: 8)
+                    
+                    Triangle()
+                        .fill(Color.white.opacity(0.4))
+                        .frame(width: 14, height: 18)
+                        .rotationEffect(.degrees(180))
                 }
                 
-                // Heading Display
-                VStack {
-                    Spacer()
-                    Text("\(Int(heading))°")
-                        .font(.system(size: 24, weight: .bold, design: .monospaced))
-                        .foregroundColor(.primary)
-                        .padding(.bottom, 60)
-                }
+                // Heading degrees
+                Text("\(Int(heading))°")
+                    .font(.system(size: 18, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
+                    .offset(y: 50)
             }
-            .frame(width: 250, height: 250)
-            .rotationEffect(.degrees(-heading)) // Rotate the whole dial opposite to heading
+            .frame(width: 280, height: 280)
+            .rotationEffect(.degrees(-heading))
+            .animation(.easeOut(duration: 0.3), value: heading)
             
-            if let dist = distance {
-                VStack {
+            // Distance capsule
+            if let dist = distance, dist > 0 {
+                VStack(spacing: 4) {
                     Text("DISTANCE")
-                        .font(.caption2.bold())
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundColor(Color(white: 0.45))
+                        .tracking(2)
                     Text(formatDistance(dist))
-                        .font(.title2.bold().monospacedDigit())
-                        .foregroundColor(.primary)
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 8)
-                .background(Capsule().fill(Color.primary.opacity(0.1)))
+                .padding(.horizontal, 28)
+                .padding(.vertical, 12)
+                .background(
+                    Capsule()
+                        .fill(Color(white: 0.12))
+                        .overlay(Capsule().stroke(Color(white: 0.2), lineWidth: 1))
+                )
             }
         }
-        .padding(30)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 30)
-                    .fill(.ultraThinMaterial)
-                RoundedRectangle(cornerRadius: 30)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
-            }
-        )
-        .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
-    }
-    
-    private func angleForDirection(_ direction: String) -> Double {
-        switch direction {
-        case "N": return 0
-        case "E": return 90
-        case "S": return 180
-        case "W": return 270
-        default: return 0
+        .onAppear {
+            isBreathing = true
         }
     }
     
@@ -112,16 +169,31 @@ struct CompassView: View {
         if meters < 1000 {
             return "\(Int(meters))m"
         } else {
-            return String(format: "%.1fkm", meters / 1000)
+            return String(format: "%.1f km", meters / 1000)
         }
+    }
+}
+
+// Simple triangle shape for the compass needle
+struct Triangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }
 
 struct CompassView_Previews: PreviewProvider {
     static var previews: some View {
         ZStack {
-            Color.gray.ignoresSafeArea()
-            CompassView(heading: 45, targetBearing: 10, distance: 1200)
+            Color.black.ignoresSafeArea()
+            CompassView(
+                locationManager: LocationManager(),
+                targetCoordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)
+            )
         }
     }
 }

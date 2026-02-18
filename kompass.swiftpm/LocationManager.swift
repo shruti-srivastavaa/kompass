@@ -107,6 +107,88 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         let target = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         return current.distance(from: target)
     }
+    
+    // MARK: - Simulation Logic
+    private var simulationTimer: Timer?
+    private var simulationRoute: [CLLocationCoordinate2D] = []
+    private var simulationIndex = 0
+    @Published var isSimulating = false
+    
+    func startSimulation(route: [CLLocationCoordinate2D], speedMultiplier: Double = 1.0) {
+        stopSimulation()
+        guard !route.isEmpty else { return }
+        
+        simulationRoute = route
+        simulationIndex = 0
+        isSimulating = true
+        
+        // Stop real updates to avoid conflict (optional, but cleaner)
+        manager.stopUpdatingLocation()
+        manager.stopUpdatingHeading()
+        
+        // Timer to advance position
+        // MKDirections points are usually close. 0.5s interval is okay.
+        simulationTimer = Timer.scheduledTimer(withTimeInterval: 0.5 / speedMultiplier, repeats: true) { [weak self] _ in
+            self?.nextSimulationStep()
+        }
+    }
+    
+    func stopSimulation() {
+        simulationTimer?.invalidate()
+        simulationTimer = nil
+        simulationRoute = []
+        isSimulating = false
+        
+        // Resume real updates
+        manager.startUpdatingLocation()
+        manager.startUpdatingHeading()
+    }
+    
+    private func nextSimulationStep() {
+        guard simulationIndex < simulationRoute.count else {
+            stopSimulation()
+            return
+        }
+        
+        let coord = simulationRoute[simulationIndex]
+        let timestamp = Date()
+        
+        // Calculate course from current point to next point
+        var course: CLLocationDirection = lastHeading?.trueHeading ?? 0
+        if simulationIndex + 1 < simulationRoute.count {
+            course = calculateBearing(from: coord, to: simulationRoute[simulationIndex + 1])
+        } else if simulationIndex > 0 {
+            // Keep previous course if at end
+             course = calculateBearing(from: simulationRoute[simulationIndex - 1], to: coord)
+        }
+        
+        let location = CLLocation(
+            coordinate: coord,
+            altitude: 0,
+            horizontalAccuracy: 5,
+            verticalAccuracy: 5,
+            course: course,
+            speed: 15, // ~54 km/h generic speed
+            timestamp: timestamp
+        )
+        
+        lastLocation = location
+        simulationIndex += 1
+    }
+    
+    private func calculateBearing(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) -> Double {
+        let lat1 = from.latitude.toRadians()
+        let lon1 = from.longitude.toRadians()
+        let lat2 = to.latitude.toRadians()
+        let lon2 = to.longitude.toRadians()
+        let dLon = lon2 - lon1
+        
+        let y = sin(dLon) * cos(lat2)
+        let x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
+        
+        let radiansBearing = atan2(y, x)
+        return radiansBearing.toDegrees()
+    }
 }
 
 extension Double {

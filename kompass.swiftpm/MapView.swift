@@ -1,6 +1,9 @@
 import SwiftUI
 import MapKit
 
+// Custom subclass to distinguish the animation overlay
+class AnimatablePolyline: MKPolyline {}
+
 struct MapView: UIViewRepresentable {
     @Binding var region: MKCoordinateRegion
     var locations: [Location]
@@ -19,20 +22,45 @@ struct MapView: UIViewRepresentable {
         mapView.showsCompass = true
         mapView.pointOfInterestFilter = .includingAll
         
-        updateMapConfiguration(mapView)
+        // Use a dark map configuration for AMOLED feel
+        let config = MKStandardMapConfiguration()
+        config.emphasisStyle = .muted
+        mapView.preferredConfiguration = config
         
         return mapView
     }
 
     func updateUIView(_ mapView: MKMapView, context: Context) {
         // Update Configuration (Style)
-        updateMapConfiguration(mapView)
+        let config: MKMapConfiguration
+        switch mapStyle {
+        case .standard:
+            let standard = MKStandardMapConfiguration()
+            standard.emphasisStyle = .muted
+            if showTraffic { standard.showsTraffic = true }
+            config = standard
+        case .hybrid:
+            let hybrid = MKHybridMapConfiguration()
+            if showTraffic { hybrid.showsTraffic = true }
+             // hybrid.elevationStyle = .realistic // iOS 17+
+            config = hybrid
+        case .imagery:
+            config = MKImageryMapConfiguration()
+        }
+        
+        mapView.preferredConfiguration = config
         
         // Update 3D Mode (Pitch)
         if is3DMode {
-            mapView.camera.pitch = 60
+            if mapView.camera.pitch < 45 {
+                let camera = mapView.camera
+                camera.pitch = 60
+                mapView.setCamera(camera, animated: true)
+            }
         } else if mapView.camera.pitch > 0 {
-            mapView.camera.pitch = 0
+            let camera = mapView.camera
+            camera.pitch = 0
+            mapView.setCamera(camera, animated: true)
         }
         
         // Update region
@@ -46,33 +74,41 @@ struct MapView: UIViewRepresentable {
             }
         }
         
-        // Update tracking mode
         if isNavigating {
-            mapView.setUserTrackingMode(.followWithHeading, animated: true)
+            if mapView.userTrackingMode != .followWithHeading {
+                UIView.animate(withDuration: 1.0) {
+                    mapView.setUserTrackingMode(.followWithHeading, animated: true)
+                }
+            }
+            context.coordinator.startAnimation(mapView: mapView)
         } else {
             if mapView.userTrackingMode != .none {
                 mapView.setUserTrackingMode(.none, animated: true)
             }
+            context.coordinator.stopAnimation()
         }
 
-        // Update annotations - rebuild only when needed
+        // Update annotations
+        updateAnnotations(mapView: mapView)
+
+        // Update polyline
+        updateOverlays(mapView: mapView, context: context)
+    }
+    
+    private func updateAnnotations(mapView: MKMapView) {
         let existingAnnotations = mapView.annotations.compactMap { $0 as? LocationAnnotation }
         let existingIDs = Set(existingAnnotations.map { $0.location.id })
         let newIDs = Set(locations.map { $0.id })
         
-        // Remove stale
         let toRemove = existingAnnotations.filter { !newIDs.contains($0.location.id) }
-        if !toRemove.isEmpty {
-            mapView.removeAnnotations(toRemove)
-        }
+        if !toRemove.isEmpty { mapView.removeAnnotations(toRemove) }
         
-        // Add new
         let toAdd = locations.filter { !existingIDs.contains($0.id) }
         if !toAdd.isEmpty {
             mapView.addAnnotations(toAdd.map { LocationAnnotation(location: $0) })
         }
         
-        // Update selection
+        // Selection
         if let selected = selectedLocation {
              if let annotation = mapView.annotations.first(where: { ($0 as? LocationAnnotation)?.location.id == selected.id }) {
                  if !mapView.selectedAnnotations.contains(where: { ($0 as? LocationAnnotation)?.location.id == selected.id }) {
@@ -84,14 +120,33 @@ struct MapView: UIViewRepresentable {
                  mapView.selectedAnnotations.forEach { mapView.deselectAnnotation($0, animated: true) }
              }
         }
-
-        // Update polyline
-        mapView.removeOverlays(mapView.overlays)
-        if !routeCoordinates.isEmpty {
+    }
+    
+    private func updateOverlays(mapView: MKMapView, context: Context) {
+        if routeCoordinates.isEmpty {
+            context.coordinator.lastRouteCoordinates = []
+            mapView.removeOverlays(mapView.overlays)
+            mapView.removeAnnotations(mapView.annotations.filter { $0 is MKPointAnnotation })
+            return
+        }
+        
+        // Check if route changed
+        if context.coordinator.lastRouteCoordinates.count != routeCoordinates.count {
+            context.coordinator.lastRouteCoordinates = routeCoordinates
+            
+            // Remove all overlays
+            mapView.removeOverlays(mapView.overlays)
+            
+            // Add Base Track
             let polyline = MKPolyline(coordinates: routeCoordinates, count: routeCoordinates.count)
             mapView.addOverlay(polyline, level: .aboveRoads)
             
-            // Add start/end markers
+            // Add Animation Layer
+            let animPolyline = AnimatablePolyline(coordinates: routeCoordinates, count: routeCoordinates.count)
+            mapView.addOverlay(animPolyline, level: .aboveRoads)
+            
+            // Markers
+            mapView.removeAnnotations(mapView.annotations.filter { $0 is MKPointAnnotation })
             if let first = routeCoordinates.first {
                 let startAnnotation = MKPointAnnotation()
                 startAnnotation.coordinate = first
@@ -104,8 +159,8 @@ struct MapView: UIViewRepresentable {
                 endAnnotation.title = "End"
                 mapView.addAnnotation(endAnnotation)
             }
-             
-            // Zoom to fit route
+            
+            // Zoom
             let rect = polyline.boundingMapRect
             mapView.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: 100, left: 60, bottom: 300, right: 60), animated: true)
         }
@@ -114,72 +169,149 @@ struct MapView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
-
-    private func updateMapConfiguration(_ mapView: MKMapView) {
-        switch mapStyle {
-        case .standard:
-            let config = MKStandardMapConfiguration(elevationStyle: .realistic)
-            config.pointOfInterestFilter = .includingAll
-            config.showsTraffic = showTraffic
-            mapView.preferredConfiguration = config
-        case .hybrid:
-            let config = MKHybridMapConfiguration(elevationStyle: .realistic)
-            config.pointOfInterestFilter = .includingAll
-            config.showsTraffic = showTraffic
-            mapView.preferredConfiguration = config
-        case .imagery:
-            let config = MKImageryMapConfiguration(elevationStyle: .realistic)
-            mapView.preferredConfiguration = config
-        }
-    }
     
     class Coordinator: NSObject, MKMapViewDelegate {
         var parent: MapView
+        var lastRouteCoordinates: [CLLocationCoordinate2D] = []
+        private var animationTimer: Timer?
+        private var animePhase: Double = 0
+        private var activeAnimRenderers: [MKPolylineRenderer] = []
 
         init(parent: MapView) {
             self.parent = parent
         }
 
+        func startAnimation(mapView: MKMapView) {
+            guard animationTimer == nil else { return }
+            animePhase = 0
+            
+            // Re-fetch renderers for safety
+            activeAnimRenderers.removeAll()
+            for overlay in mapView.overlays {
+                if overlay is AnimatablePolyline, let renderer = mapView.renderer(for: overlay) as? MKPolylineRenderer {
+                    activeAnimRenderers.append(renderer)
+                }
+            }
+            
+            animationTimer = Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self = self else { return }
+                    self.animePhase += 0.02
+                
+                // Loading Bar Chase Effect
+                // Use truncated remainder to cycle 0 -> 1
+                let progress = self.animePhase.truncatingRemainder(dividingBy: 1.0)
+                
+                for renderer in self.activeAnimRenderers {
+                    let totalLen = renderer.polyline.boundingMapRect.size.width + renderer.polyline.boundingMapRect.size.height
+                    // Length tuning: MapRect units are large, but relative proportions work
+                    // We want a visible dash. Let's make it 30% of the total length.
+                    
+                    // Note: MKPolylineRenderer geometry is in map points.
+                    // We'll use a simpler heuristic for dash pattern.
+                    // If we set pattern to [len, gap], and phase, it repeats.
+                    // We want ONE segment moving.
+                    // So pattern should be [segmentLength, hugeGap].
+                    
+                    let segmentLength = totalLen * 0.3
+                    let gapLength = totalLen * 2.0 // Make gap large enough so we don't see a second one
+                    
+                    renderer.lineDashPattern = [NSNumber(value: Double(segmentLength)), NSNumber(value: Double(gapLength))]
+                    
+                    // Move the phase backwards to make dash move forwards?
+                    // Phase is the offset into the pattern where drawing starts.
+                    // If phase = 0, dash starts at 0.
+                    // If phase = segmentLength, dash starts at -segmentLength (invisible).
+                    // We want dash to travel from 0 to totalLen.
+                    // Phase should go from segmentLength down to -totalLen ?
+                    
+                    // Actually: phase P means "start drawing at index P of the pattern".
+                    // If pattern is [10, 100].
+                    // Phase 0: Dash[0-10], Gap[10-110].
+                    // Phase 5: Dash[5-10] (first 5 cut off), Gap...
+                    // Subtracting from phase moves pattern RIGHT.
+                    // Adding to phase moves pattern LEFT.
+                    
+                    // We want to move pattern ALONG the line (forward).
+                    // So we subtract.
+                    
+                    let moveOffset = totalLen * (1.0 + 0.3) * progress // Move slightly more than 1.0 to clear
+                    // We start with dash fully hidden "behind" start, or just entering?
+                    // Let's start with phase = segmentLength (hidden left) and decrease?
+                    
+                    // Simpler: Just cycle phase negatively.
+                    renderer.lineDashPhase = CGFloat(totalLen * 2.0 - (totalLen * 3.0 * progress))
+                    
+                    renderer.setNeedsDisplay()
+                }
+            }
+            }
+        }
+
+        func stopAnimation() {
+            animationTimer?.invalidate()
+            animationTimer = nil
+            activeAnimRenderers.removeAll()
+        }
+
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-            // User location - default
             if annotation is MKUserLocation { return nil }
             
-            // Start/End route markers
-            if let pointAnnotation = annotation as? MKPointAnnotation {
+            if annotation is MKPointAnnotation {
                 let identifier = "RouteMarker"
                 var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
                 if view == nil {
                     view = MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: identifier)
-                } else {
-                    view?.annotation = annotation
                 }
-                if pointAnnotation.title == "Start" {
-                    view?.markerTintColor = .systemGreen
-                    view?.glyphImage = UIImage(systemName: "figure.walk")
+                view?.annotation = annotation
+                if let title = annotation.title, title == "Start" {
+                    view?.markerTintColor = UIColor(white: 0.15, alpha: 1.0)
+                    view?.glyphImage = UIImage(systemName: "square.fill")
+                    view?.glyphTintColor = .white
                 } else {
-                    view?.markerTintColor = .systemRed
-                    view?.glyphImage = UIImage(systemName: "flag.fill")
+                    view?.markerTintColor = UIColor(red: 39/255, green: 110/255, blue: 241/255, alpha: 1.0)
+                    view?.glyphImage = UIImage(systemName: "circle.fill")
+                    view?.glyphTintColor = .white
+                    
+                    // Add breathing animation to Destination
+                    if let title = annotation.title, title == "End" {
+                        // Remove existing pulse layers if any to avoid stacking
+                        view?.layer.sublayers?.filter { $0.name == "PulseLayer" }.forEach { $0.removeFromSuperlayer() }
+                        
+                        let pulseLayer = CALayer()
+                        pulseLayer.name = "PulseLayer"
+                        pulseLayer.backgroundColor = UIColor(red: 39/255, green: 110/255, blue: 241/255, alpha: 0.5).cgColor
+                        pulseLayer.bounds = CGRect(x: 0, y: 0, width: 40, height: 40)
+                        pulseLayer.position = CGPoint(x: 20, y: 20) // Centered in a standard marker? 
+                        // Marker view bounds might be different. 
+                        // MKMarkerAnnotationView is usually around 40x40 or so but has a shadow and balloon shape.
+                        // Let's position it at the anchor.
+                        
+                        // Actually, standard UIView animation on the view itself is safer for "breathing" size/opacity.
+                        let animation = CABasicAnimation(keyPath: "transform.scale")
+                        animation.fromValue = 1.0
+                        animation.toValue = 1.2
+                        animation.duration = 1.0
+                        animation.autoreverses = true
+                        animation.repeatCount = .infinity
+                        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                        
+                        view?.layer.add(animation, forKey: "breathing")
+                    }
                 }
-                view?.displayPriority = .required
                 return view
             }
             
-            // Location annotations with category colors
             guard let locationAnnotation = annotation as? LocationAnnotation else { return nil }
-            
             let identifier = "LocationAnnotation"
             var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
-
             if view == nil {
                 view = MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: identifier)
                 view?.canShowCallout = true
                 view?.rightCalloutAccessoryView = UIButton(type: .detailDisclosure)
-                view?.animatesWhenAdded = true
-            } else {
-                view?.annotation = annotation
             }
+            view?.annotation = annotation
             
-            // Color by category
             let location = locationAnnotation.location
             if let category = location.category {
                 view?.markerTintColor = UIColor(category.color)
@@ -188,10 +320,7 @@ struct MapView: UIViewRepresentable {
                 view?.markerTintColor = .systemBlue
                 view?.glyphImage = UIImage(systemName: location.iconName)
             }
-            
             view?.displayPriority = .defaultHigh
-            view?.clusteringIdentifier = "places"
-            
             return view
         }
         
@@ -201,10 +330,6 @@ struct MapView: UIViewRepresentable {
              }
         }
         
-        func mapView(_ mapView: MKMapView, didDeselect view: MKAnnotationView) {
-             // Don't clear selection - let the UI handle it
-        }
-        
         func mapView(_ mapView: MKMapView, annotationView view: MKAnnotationView, calloutAccessoryControlTapped control: UIControl) {
             if let locationAnnotation = view.annotation as? LocationAnnotation {
                 parent.selectedLocation = locationAnnotation.location
@@ -212,9 +337,19 @@ struct MapView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            if let polyline = overlay as? MKPolyline {
+            if let animPoly = overlay as? AnimatablePolyline {
+                // Animation Layer: Bright White "Loading Bar"
+                let renderer = MKPolylineRenderer(polyline: animPoly)
+                renderer.strokeColor = .white
+                renderer.lineWidth = 6
+                renderer.lineCap = .round
+                renderer.lineJoin = .round
+                activeAnimRenderers.append(renderer)
+                return renderer
+            } else if let polyline = overlay as? MKPolyline {
+                // Base Track: Dark Gray (AMOLED style)
                 let renderer = MKPolylineRenderer(polyline: polyline)
-                renderer.strokeColor = UIColor.systemBlue
+                renderer.strokeColor = UIColor(white: 0.2, alpha: 1.0)
                 renderer.lineWidth = 6
                 renderer.lineCap = .round
                 renderer.lineJoin = .round
@@ -224,7 +359,6 @@ struct MapView: UIViewRepresentable {
         }
         
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-            // Sync region back to SwiftUI
             DispatchQueue.main.async {
                 self.parent.region = mapView.region
             }
