@@ -1,8 +1,8 @@
-import SwiftUI
-
 // MARK: - Dynamic Island Navigation Overlay
 // Simulates Apple Maps-style Dynamic Island during navigation.
 // Shows compact pill by default; expand on tap for detailed view.
+
+import SwiftUI
 
 struct DynamicIslandView: View {
     let currentInstruction: String
@@ -13,13 +13,14 @@ struct DynamicIslandView: View {
     let totalSteps: Int
     var onTap: () -> Void = {}
     var onEndNavigation: () -> Void = {}
-    
+
     @State private var isExpanded = false
     @State private var pulseArrow = false
-    
+
     // Derive turn icon from instruction
     private var turnIcon: String {
         let lower = currentInstruction.lowercased()
+        if lower.contains("direct") { return "arrow.up" }
         if lower.contains("right") { return "arrow.turn.up.right" }
         if lower.contains("left") { return "arrow.turn.up.left" }
         if lower.contains("u-turn") || lower.contains("u turn") { return "arrow.uturn.down" }
@@ -28,7 +29,7 @@ struct DynamicIslandView: View {
         if lower.contains("destination") || lower.contains("arrive") { return "mappin.circle.fill" }
         return "arrow.up"
     }
-    
+
     private var etaFormatted: String {
         let mins = Int(etaSeconds) / 60
         if mins < 1 { return "<1 min" }
@@ -37,14 +38,14 @@ struct DynamicIslandView: View {
         let m = mins % 60
         return m > 0 ? "\(h)h \(m)m" : "\(h)h"
     }
-    
+
     private var distFormatted: String {
         if distanceMeters < 1000 {
             return "\(Int(distanceMeters))m"
         }
         return String(format: "%.1f km", distanceMeters / 1000)
     }
-    
+
     var body: some View {
         VStack {
             if isExpanded {
@@ -59,7 +60,7 @@ struct DynamicIslandView: View {
             pulseArrow = true
         }
     }
-    
+
     // MARK: - Compact Pill (Apple Maps style)
     private var compactView: some View {
         HStack(spacing: 0) {
@@ -73,7 +74,9 @@ struct DynamicIslandView: View {
                             Rectangle()
                                 .fill(
                                     LinearGradient(
-                                        gradient: Gradient(colors: [.clear, .white.opacity(0.7), .clear]),
+                                        gradient: Gradient(colors: [
+                                            .clear, .white.opacity(0.7), .clear,
+                                        ]),
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     )
@@ -90,7 +93,7 @@ struct DynamicIslandView: View {
                     .onAppear {
                         pulseArrow = true
                     }
-                
+
                 Text(abbreviateInstruction(currentInstruction))
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
@@ -98,7 +101,7 @@ struct DynamicIslandView: View {
                     .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            
+
             // Trailing: ETA
             Text(etaFormatted)
                 .font(.system(size: 13, weight: .bold, design: .monospaced))
@@ -125,14 +128,13 @@ struct DynamicIslandView: View {
                 )
         )
         .frame(width: 200)
-        .padding(.top, 14) // Increased slightly to lower it from the sensor housing
-        .contentShape(Rectangle()) // Ensure the entire area is hittable
+        .padding(.top, 8)  // Float cleanly below the safe area
+        .contentShape(Rectangle())  // Ensure the entire area is hittable
         .onTapGesture {
-            print("Dynamic Island Tapped") // Debug print
             isExpanded = true
         }
     }
-    
+
     // MARK: - Expanded View (Apple Maps Dynamic Island expanded)
     private var expandedView: some View {
         VStack(spacing: 0) {
@@ -148,13 +150,13 @@ struct DynamicIslandView: View {
                             .font(.system(size: 20, weight: .bold))
                             .foregroundColor(.green)
                     }
-                    
+
                     VStack(alignment: .leading, spacing: 2) {
                         Text(currentInstruction.isEmpty ? "Continue on route" : currentInstruction)
                             .font(.system(size: 15, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                             .lineLimit(2)
-                        
+
                         if let next = nextInstruction, !next.isEmpty {
                             Text("Then: \(abbreviateInstruction(next))")
                                 .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -162,10 +164,10 @@ struct DynamicIslandView: View {
                                 .lineLimit(1)
                         }
                     }
-                    
+
                     Spacer()
                 }
-                
+
                 // Progress bar
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -174,12 +176,15 @@ struct DynamicIslandView: View {
                             .frame(height: 3)
                         Capsule()
                             .fill(Color.green)
-                            .frame(width: geo.size.width * CGFloat(stepIndex + 1) / CGFloat(max(totalSteps, 1)), height: 3)
+                            .frame(
+                                width: geo.size.width * CGFloat(stepIndex + 1)
+                                    / CGFloat(max(totalSteps, 1)), height: 3
+                            )
                             .animation(.spring(response: 0.4), value: stepIndex)
                     }
                 }
                 .frame(height: 3)
-                
+
                 // Bottom row: ETA + Distance + Step
                 HStack {
                     // ETA
@@ -191,9 +196,9 @@ struct DynamicIslandView: View {
                             .font(.system(size: 13, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                     }
-                    
+
                     Spacer()
-                    
+
                     // Distance
                     HStack(spacing: 4) {
                         Image(systemName: "location.fill")
@@ -203,9 +208,9 @@ struct DynamicIslandView: View {
                             .font(.system(size: 13, weight: .medium, design: .rounded))
                             .foregroundColor(Color(white: 0.6))
                     }
-                    
+
                     Spacer()
-                    
+
                     // Step count
                     Text("Step \(stepIndex + 1)/\(totalSteps)")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -233,14 +238,15 @@ struct DynamicIslandView: View {
                 )
         )
         .padding(.horizontal, 14)
-        .padding(.top, 11)
+        .padding(.top, 8)
         .onTapGesture {
             isExpanded = false
         }
     }
-    
+
     private func abbreviateInstruction(_ text: String) -> String {
-        let short = text
+        let short =
+            text
             .replacingOccurrences(of: "Turn ", with: "")
             .replacingOccurrences(of: "Continue on ", with: "On ")
             .replacingOccurrences(of: "Keep ", with: "")

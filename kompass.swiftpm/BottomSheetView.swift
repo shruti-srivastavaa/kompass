@@ -4,7 +4,7 @@ enum SheetDetent: CaseIterable {
     case peek
     case half
     case full
-    
+
     func height(maxHeight: CGFloat) -> CGFloat {
         switch self {
         case .peek: return 120
@@ -13,7 +13,6 @@ enum SheetDetent: CaseIterable {
         }
     }
 }
-
 struct BottomSheetView<Content: View>: View {
     @Binding var isOpen: Bool
     let maxHeight: CGFloat
@@ -43,7 +42,10 @@ struct BottomSheetView<Content: View>: View {
             }
     }
 
-    init(isOpen: Binding<Bool>, maxHeight: CGFloat, minHeight: CGFloat = 0, @ViewBuilder content: () -> Content) {
+    init(
+        isOpen: Binding<Bool>, maxHeight: CGFloat, minHeight: CGFloat = 0,
+        @ViewBuilder content: () -> Content
+    ) {
         self.minHeight = minHeight
         self.maxHeight = maxHeight
         self.content = content()
@@ -59,37 +61,50 @@ struct BottomSheetView<Content: View>: View {
                 self.content
             }
             .frame(width: geometry.size.width, height: maxHeight, alignment: .top)
+            .frame(width: geometry.size.width, height: maxHeight, alignment: .top)
             .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color(red: 0.05, green: 0.05, blue: 0.05)) // Deep AMOLED gray/black
-                    .shadow(color: .black.opacity(0.4), radius: 10, y: -5)
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .environment(\.colorScheme, .dark)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 20))
+            .background(
+                Color(red: 0.03, green: 0.03, blue: 0.05).opacity(0.85)  // Slight tint for dark mode
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(Color(white: 0.15), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.2), Color.clear], startPoint: .top,
+                            endPoint: .bottom), lineWidth: 0.5)
             )
-            .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: -4)
+            .shadow(color: Color.black.opacity(0.25), radius: 24, x: 0, y: -8)
             .frame(height: geometry.size.height, alignment: .bottom)
             .offset(y: max(self.offset + self.translation, 0))
-            .animation(.spring(response: 0.35, dampingFraction: 0.86), value: currentDetent)
-            .animation(.spring(response: 0.35, dampingFraction: 0.86), value: isOpen)
-            .animation(.interactiveSpring(), value: translation)
+            .animation(
+                .spring(response: 0.45, dampingFraction: 0.75, blendDuration: 0.5),
+                value: currentDetent
+            )
+            .animation(
+                .spring(response: 0.45, dampingFraction: 0.75, blendDuration: 0.5), value: isOpen
+            )
+            .animation(.interactiveSpring(response: 0.35, dampingFraction: 0.8), value: translation)
             .gesture(
                 DragGesture()
                     .updating(self.$translation) { value, state, _ in
                         state = value.translation.height
                     }
                     .onEnded { value in
-                        let velocity = value.predictedEndTranslation.height - value.translation.height
+                        let velocity =
+                            value.predictedEndTranslation.height - value.translation.height
                         let projected = currentHeight - value.translation.height - velocity * 0.15
-                        
+
                         snapToNearest(projectedHeight: projected)
                     }
             )
         }
     }
-    
+
     private func cycleDetent() {
         switch currentDetent {
         case .peek: currentDetent = .half
@@ -97,12 +112,12 @@ struct BottomSheetView<Content: View>: View {
         case .full: currentDetent = .peek
         }
     }
-    
+
     private func snapToNearest(projectedHeight: CGFloat) {
         let detents: [SheetDetent] = [.peek, .half, .full]
         var closestDetent = currentDetent
         var closestDist = CGFloat.infinity
-        
+
         for detent in detents {
             let h = detent.height(maxHeight: maxHeight)
             let dist = abs(projectedHeight - h)
@@ -111,7 +126,7 @@ struct BottomSheetView<Content: View>: View {
                 closestDetent = detent
             }
         }
-        
+
         withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
             // Always keep open when snapping to a detent
             if !isOpen { isOpen = true }
