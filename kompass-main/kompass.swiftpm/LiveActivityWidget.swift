@@ -51,58 +51,63 @@ struct LiveActivityWidget: Widget {
             DynamicIsland {
                 // Expanded UI
                 DynamicIslandExpandedRegion(.leading) {
-                    HStack {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .foregroundColor(.green)
-                            .font(.title2)
-                        Text(context.state.currentInstruction.prefix(20) + (context.state.currentInstruction.count > 20 ? "..." : ""))
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-                    }
-                    .padding(.leading, 8)
-                }
-                DynamicIslandExpandedRegion(.trailing) {
-                    VStack(alignment: .trailing) {
-                        Text(formatETA(context.state.etaSeconds))
-                            .font(.custom("Menlo", size: 16).bold())
-                            .foregroundColor(.green)
-                        Text(formatDistance(context.state.distanceMeters))
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                    .padding(.trailing, 8)
+                    Image(systemName: turnIcon(for: context.state.currentInstruction))
+                        .font(.title2.bold())
+                        .foregroundColor(.green)
+                        .padding(.leading, 8)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    if let next = context.state.nextInstruction {
-                        Text("Then: \(next)")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                            .padding(.leading, 8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    
-                    // Progress
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color(white: 0.2))
-                            Capsule().fill(Color.green)
-                                .frame(width: geo.size.width * CGFloat(context.state.stepIndex + 1) / CGFloat(max(context.state.totalSteps, 1)))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(context.state.currentInstruction)
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        
+                        if let next = context.state.nextInstruction {
+                            Text("Then: \(next)")
+                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                                .foregroundColor(Color(white: 0.6))
+                        }
+                        
+                        // Progress Bar
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color(white: 0.2))
+                                Capsule().fill(Color.green)
+                                    .frame(width: max(0, geo.size.width * CGFloat(context.state.stepIndex + 1) / CGFloat(max(context.state.totalSteps, 1))))
+                            }
+                        }
+                        .frame(height: 5)
+                        .padding(.top, 4)
+                        
+                        HStack {
+                            Text(formatDistance(context.state.distanceMeters))
+                                .font(.caption2.bold())
+                                .foregroundColor(.gray)
+                            Spacer()
+                            Text(formatETA(context.state.etaSeconds))
+                                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                .foregroundColor(.green)
                         }
                     }
-                    .frame(height: 4)
                     .padding(.horizontal, 8)
-                    .padding(.top, 8)
                 }
             } compactLeading: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .foregroundColor(.green)
+                HStack(spacing: 4) {
+                    Image(systemName: turnIcon(for: context.state.currentInstruction))
+                        .foregroundColor(.green)
+                        .font(.system(size: 12, weight: .bold))
+                    Text(abbreviateInstruction(context.state.currentInstruction))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                }
             } compactTrailing: {
                 Text(formatETA(context.state.etaSeconds))
-                    .font(.custom("Menlo", size: 12).bold())
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
                     .foregroundColor(.green)
             } minimal: {
-                Image(systemName: "location.fill")
+                Image(systemName: turnIcon(for: context.state.currentInstruction))
                     .foregroundColor(.green)
             }
             .keylineTint(.green)
@@ -121,5 +126,26 @@ struct LiveActivityWidget: Widget {
             return "\(Int(meters))m"
         }
         return String(format: "%.1f km", meters / 1000)
+    }
+
+    private func turnIcon(for instruction: String) -> String {
+        let lower = instruction.lowercased()
+        if lower.contains("direct") { return "arrow.up" }
+        if lower.contains("right") { return "arrow.turn.up.right" }
+        if lower.contains("left") { return "arrow.turn.up.left" }
+        if lower.contains("u-turn") || lower.contains("u turn") { return "arrow.uturn.down" }
+        if lower.contains("merge") { return "arrow.merge" }
+        if lower.contains("exit") { return "arrow.up.right" }
+        if lower.contains("destination") || lower.contains("arrive") { return "mappin.circle.fill" }
+        return "arrow.up"
+    }
+
+    private func abbreviateInstruction(_ instruction: String) -> String {
+        let abbr = instruction
+            .replacingOccurrences(of: "Turn left", with: "L")
+            .replacingOccurrences(of: "Turn right", with: "R")
+            .replacingOccurrences(of: "Continue", with: "Cont")
+            .replacingOccurrences(of: "destination", with: "dest", options: .caseInsensitive)
+        return String(abbr.prefix(25)) + (abbr.count > 25 ? "..." : "")
     }
 }

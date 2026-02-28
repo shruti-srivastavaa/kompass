@@ -68,7 +68,7 @@ struct BottomSheetView<Content: View>: View {
                     .environment(\.colorScheme, .dark)
             )
             .background(
-                Color(red: 0.03, green: 0.03, blue: 0.05).opacity(0.85)  // Slight tint for dark mode
+                Color.black.opacity(0.85)
             )
             .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
             .overlay(

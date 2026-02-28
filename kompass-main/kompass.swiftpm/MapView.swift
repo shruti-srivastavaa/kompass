@@ -404,19 +404,21 @@ struct MapView: UIViewRepresentable {
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let animPoly = overlay as? AnimatablePolyline {
-                // Animation Layer: Bright White "Loading Bar"
+                // Animation Layer: Pulse/glow from blue to white
                 let renderer = MKPolylineRenderer(polyline: animPoly)
-                renderer.strokeColor = UIColor.white.withAlphaComponent(0.85)  // Softer white
+                renderer.strokeColor = UIColor.white.withAlphaComponent(0.9)
                 renderer.lineWidth = 6
                 renderer.lineCap = .round
                 renderer.lineJoin = .round
+                // Create gradient effect (requires iOS 16+)
+                renderer.lineDashPattern = [20, 20]
                 activeAnimRenderers.append(renderer)
                 return renderer
             } else if let polyline = overlay as? MKPolyline {
-                // Base Track: Dark Gray (AMOLED style) but slightly elevated
+                // Base Track: Visible white trace
                 let renderer = MKPolylineRenderer(polyline: polyline)
-                renderer.strokeColor = UIColor(white: 0.25, alpha: 0.6)  // Glassy dark trace
-                renderer.lineWidth = 6
+                renderer.strokeColor = UIColor.white.withAlphaComponent(0.8)
+                renderer.lineWidth = 8
                 renderer.lineCap = .round
                 renderer.lineJoin = .round
                 return renderer

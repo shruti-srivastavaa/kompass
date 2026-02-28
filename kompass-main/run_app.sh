@@ -2,7 +2,7 @@
 set -e
 
 # Device ID for iPhone 17 Pro Max
-DEVICE_ID="E8234801-5E54-4021-BB9C-BC5DD1A32966"
+DEVICE_ID="9A849668-FDFE-4120-81E5-CED2F35929EC"
 
 echo "Booting simulator..."
 xcrun simctl boot "$DEVICE_ID" || true

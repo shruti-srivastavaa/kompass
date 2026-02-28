@@ -1,6 +1,7 @@
 import MapKit
 
 import SwiftUI
+import ActivityKit
 
 // TransportMode kept for backward compatibility, primary modes now in ExtendedTransportMode
 
@@ -125,6 +126,9 @@ struct ContentView: View {
     // Alerts
     @State private var showOfflineAlert = false
 
+    // Live Activity
+    @State private var navigationActivity: Activity<NavigationAttributes>?
+
     enum ActiveField {
         case from, to
     }
@@ -190,21 +194,6 @@ struct ContentView: View {
             }
 
             // MARK: - Dynamic Island
-            if isNavigating && !routeSteps.isEmpty {
-                DynamicIslandView(
-                    currentInstruction: routeSteps[currentStepIndex].instructions.isEmpty
-                        ? "Continue on route"
-                        : routeSteps[currentStepIndex].instructions,
-                    nextInstruction: currentStepIndex + 1 < routeSteps.count
-                        ? routeSteps[currentStepIndex + 1].instructions
-                        : nil,
-                    etaSeconds: routeInfo?.expectedTravelTime ?? 0,
-                    distanceMeters: routeInfo?.distance ?? 0,
-                    stepIndex: currentStepIndex,
-                    totalSteps: routeSteps.count
-                )
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
 
             // MARK: - Compass FAB (during navigation)
             if isNavigating && !showCompass {
@@ -214,14 +203,16 @@ struct ContentView: View {
                         Button {
                             withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                                 showCompass = true
+                                
+                                startLiveActivity()
                             }
                         } label: {
                             ZStack {
                                 Circle()
-                                    .fill(Color(white: 0.10))
+                                    .fill(Color.black)
                                     .frame(width: 52, height: 52)
-                                    .overlay(Circle().stroke(Color(white: 0.22), lineWidth: 1))
-                                    .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
+                                    .overlay(Circle().stroke(Color(white: 0.15), lineWidth: 1))
+                                    .shadow(color: .black.opacity(0.8), radius: 8, y: 4)
                                 Image(systemName: "safari")
                                     .font(.system(size: 22, weight: .medium))
                                     .foregroundColor(.white)
@@ -258,6 +249,11 @@ struct ContentView: View {
         }
         .onReceive(toCompleter.$completions) { completions in
             toResults = completions
+        }
+        .onChange(of: currentStepIndex) { _ in
+            if isNavigating {
+                updateLiveActivity()
+            }
         }
         .alert("True Offline Mode", isPresented: $showOfflineAlert) {
             Button("OK", role: .cancel) {}
@@ -314,12 +310,12 @@ struct ContentView: View {
             .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: 28)
-                    .fill(Color(white: 0.1))
+                    .fill(Color.black)
             )
             .clipShape(RoundedRectangle(cornerRadius: 28))
             .overlay(
                 RoundedRectangle(cornerRadius: 28)
-                    .stroke(Color(white: 0.18), lineWidth: 1)
+                    .stroke(Color(white: 0.15), lineWidth: 1)
             )
             .padding(.horizontal, 16)
             .padding(.top, 56)
@@ -353,9 +349,9 @@ struct ContentView: View {
                         }
                 }
                 .padding(10)
-                .background(Color(white: 0.12))
+                .background(Color.black)
                 .cornerRadius(10)
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(white: 0.2), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(white: 0.15), lineWidth: 1))
 
                 HStack(spacing: 10) {
                     Image(systemName: "mappin.circle.fill")
@@ -370,9 +366,9 @@ struct ContentView: View {
                         }
                 }
                 .padding(10)
-                .background(Color(white: 0.12))
+                .background(Color.black)
                 .cornerRadius(10)
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(white: 0.2), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(white: 0.15), lineWidth: 1))
             }
             .padding(.horizontal)
 
@@ -399,6 +395,7 @@ struct ContentView: View {
                         startLocation = nil
                         endLocation = nil
                         fromText = ""
+                        stopLiveActivity()
                     }
                 }
                 .foregroundColor(.white)
@@ -426,6 +423,7 @@ struct ContentView: View {
                             isRoutePlanning = false
                             currentStepIndex = 0
                             showCompass = true
+                            startLiveActivity()
                         }
                     } label: {
                         Label("Start", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
@@ -443,8 +441,8 @@ struct ContentView: View {
         .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 18)
-                .fill(Color(white: 0.1))
-                .shadow(color: Color.black.opacity(0.08), radius: 8)
+                .fill(Color.black)
+                .shadow(color: Color.black.opacity(0.8), radius: 8)
         )
         .padding(.horizontal, 12)
         .padding(.top, 52)
@@ -503,9 +501,9 @@ struct ContentView: View {
         .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(Color(white: 0.1))
+                .fill(Color.black)
         )
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(white: 0.18), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(white: 0.15), lineWidth: 1))
         .padding(.horizontal, 16)
         .padding(.top, 6)
     }
@@ -542,9 +540,9 @@ struct ContentView: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundColor(.white)
                 .frame(width: 44, height: 44)
-                .background(Color(white: 0.12))
+                .background(Color.black)
                 .clipShape(Circle())
-                .overlay(Circle().stroke(Color(white: 0.22), lineWidth: 1))
+                .overlay(Circle().stroke(Color(white: 0.15), lineWidth: 1))
         }
     }
 
@@ -565,9 +563,9 @@ struct ContentView: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundColor(.white)
                 .frame(width: 44, height: 44)
-                .background(Color(white: 0.12))
+                .background(Color.black)
                 .clipShape(Circle())
-                .overlay(Circle().stroke(Color(white: 0.22), lineWidth: 1))
+                .overlay(Circle().stroke(Color(white: 0.15), lineWidth: 1))
         }
     }
 
@@ -589,12 +587,12 @@ struct ContentView: View {
         .foregroundColor(.white)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(Color(white: 0.12))
+                .fill(Color.black)
         )
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(Color(white: 0.22), lineWidth: 1)
+                .stroke(Color(white: 0.15), lineWidth: 1)
         )
     }
 
@@ -714,14 +712,14 @@ struct ContentView: View {
                                                     endPoint: .bottomTrailing)
                                                 : LinearGradient(
                                                     colors: [
-                                                        Color(white: 0.14), Color(white: 0.10),
+                                                        Color(white: 0.05), Color.black,
                                                     ], startPoint: .topLeading,
                                                     endPoint: .bottomTrailing)
                                         )
                                         .frame(width: 50, height: 50)
                                         .overlay(
                                             Circle().stroke(
-                                                isActive ? Color.clear : Color(white: 0.22),
+                                                isActive ? Color.clear : Color(white: 0.15),
                                                 lineWidth: 1)
                                         )
                                         .shadow(
@@ -1388,21 +1386,18 @@ struct ContentView: View {
     func calculateRoute() {
         guard let start = startLocation, let end = endLocation else { return }
 
-        let coords = [start.coordinate, end.coordinate]
-        let loc1 = CLLocation(
-            latitude: start.coordinate.latitude, longitude: start.coordinate.longitude)
-        let loc2 = CLLocation(
-            latitude: end.coordinate.latitude, longitude: end.coordinate.longitude)
-        let dist = loc1.distance(from: loc2)
-
-        let speed = 13.8  // ~50 km/h default
-        let time = dist / speed
-        let steps = [SimpleRouteStep(instructions: "Follow direct path to destination")]
-        let info = RouteInfo(expectedTravelTime: time, distance: dist)
-
-        routeCoordinates = coords
-        routeSteps = steps
-        routeInfo = info
+        Task {
+            let startCoord = start.coordinate
+            let endCoord = end.coordinate
+            
+            if let data = await fetchRouteOptions(start: startCoord, end: endCoord, type: .automobile) {
+                await MainActor.run {
+                    self.routeCoordinates = data.coords
+                    self.routeSteps = data.steps
+                    self.routeInfo = RouteInfo(expectedTravelTime: data.time, distance: data.dist)
+                }
+            }
+        }
     }
 
     // MARK: - Multi-Route Calculation
@@ -1413,59 +1408,20 @@ struct ContentView: View {
         routeOptions = []
 
         Task {
-            // True Offline Routing (Direct Line Calculation)
-            var driveData:
-                (
-                    coords: [CLLocationCoordinate2D], steps: [SimpleRouteStep], time: TimeInterval,
-                    dist: Double
-                )?
-            var walkData:
-                (
-                    coords: [CLLocationCoordinate2D], steps: [SimpleRouteStep], time: TimeInterval,
-                    dist: Double
-                )?
-            var transitData:
-                (
-                    coords: [CLLocationCoordinate2D], steps: [SimpleRouteStep], time: TimeInterval,
-                    dist: Double
-                )?
+            let startCoord = start.coordinate
+            let endCoord = end.coordinate
 
-            let types = ["drive", "walk", "transit"]
+            async let driveData = fetchRouteOptions(start: startCoord, end: endCoord, type: .automobile)
+            async let walkData = fetchRouteOptions(start: startCoord, end: endCoord, type: .walking)
+            async let transitData = fetchRouteOptions(start: startCoord, end: endCoord, type: .transit)
 
-            for name in types {
-                let coords = [start.coordinate, end.coordinate]
-                let loc1 = CLLocation(
-                    latitude: start.coordinate.latitude, longitude: start.coordinate.longitude)
-                let loc2 = CLLocation(
-                    latitude: end.coordinate.latitude, longitude: end.coordinate.longitude)
-                let dist = loc1.distance(from: loc2)
-
-                // Estimate speed (m/s)
-                let speed: Double
-                switch name {
-                case "drive": speed = 13.8  // ~50 km/h
-                case "walk": speed = 1.4  // ~5 km/h
-                case "transit": speed = 8.3  // ~30 km/h
-                default: speed = 10.0
-                }
-
-                let time = dist / speed
-                let steps = [SimpleRouteStep(instructions: "Go directly to destination")]
-                let data = (coords: coords, steps: steps, time: time, dist: dist)
-
-                switch name {
-                case "drive": driveData = data
-                case "walk": walkData = data
-                case "transit": transitData = data
-                default: break
-                }
-            }
+            let (dData, wData, tData) = await (driveData, walkData, transitData)
 
             await MainActor.run {
                 var options: [RouteOption] = []
 
                 // Drive + derived modes
-                if let d = driveData {
+                if let d = dData {
                     options.append(
                         RouteOption(
                             mode: .drive, travelTime: d.time, distance: d.dist, steps: d.steps,
@@ -1493,7 +1449,7 @@ struct ContentView: View {
                 }
 
                 // Walk + cycle
-                if let w = walkData {
+                if let w = wData {
                     options.append(
                         RouteOption(
                             mode: .walk, travelTime: w.time, distance: w.dist, steps: w.steps,
@@ -1505,7 +1461,7 @@ struct ContentView: View {
                 }
 
                 // Transit + ferry
-                if let t = transitData {
+                if let t = tData {
                     options.append(
                         RouteOption(
                             mode: .transit, travelTime: t.time, distance: t.dist, steps: t.steps,
@@ -1518,8 +1474,6 @@ struct ContentView: View {
 
                 self.routeOptions = options
                 self.isCalculatingRoutes = false
-
-                // Removed offline alert dependency since it's fully offline now.
 
                 // Auto-select
                 if let match = options.first(where: { $0.mode == extendedMode }) {
@@ -1674,6 +1628,62 @@ struct ContentView: View {
         newSpan.longitudeDelta *= 2.0
         region.span = newSpan
     }
+    
+    // MARK: - Live Activities
+    private func startLiveActivity() {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        let attributes = NavigationAttributes(destinationName: endLocation?.name ?? "Destination")
+        let initialState = NavigationAttributes.ContentState(
+            currentInstruction: routeSteps.first?.instructions ?? "Head to route",
+            nextInstruction: routeSteps.count > 1 ? routeSteps[1].instructions : nil,
+            etaSeconds: routeInfo?.expectedTravelTime ?? 0,
+            distanceMeters: routeInfo?.distance ?? 0,
+            stepIndex: 0,
+            totalSteps: routeSteps.count
+        )
+        
+        do {
+            navigationActivity = try Activity.request(
+                attributes: attributes,
+                content: .init(state: initialState, staleDate: nil)
+            )
+        } catch {
+            print("Failed to start Live Activity: \(error)")
+        }
+    }
+    
+    private func updateLiveActivity() {
+        guard let activity = navigationActivity else { return }
+        let updatedState = NavigationAttributes.ContentState(
+            currentInstruction: currentStepIndex < routeSteps.count ? routeSteps[currentStepIndex].instructions : "Arriving",
+            nextInstruction: currentStepIndex + 1 < routeSteps.count ? routeSteps[currentStepIndex + 1].instructions : nil,
+            etaSeconds: routeInfo?.expectedTravelTime ?? 0,
+            distanceMeters: routeInfo?.distance ?? 0,
+            stepIndex: currentStepIndex,
+            totalSteps: routeSteps.count
+        )
+        
+        Task {
+            await activity.update(.init(state: updatedState, staleDate: nil))
+        }
+    }
+    
+    private func stopLiveActivity() {
+        guard let activity = navigationActivity else { return }
+        let finalState = NavigationAttributes.ContentState(
+            currentInstruction: "Arrived",
+            nextInstruction: nil,
+            etaSeconds: 0,
+            distanceMeters: 0,
+            stepIndex: routeSteps.count,
+            totalSteps: routeSteps.count
+        )
+        
+        Task {
+            await activity.end(.init(state: finalState, staleDate: nil), dismissalPolicy: .immediate)
+        }
+        navigationActivity = nil
+    }
 
     // MARK: - Formatting
     private func formatTime(_ time: TimeInterval) -> String {
@@ -1690,4 +1700,34 @@ struct ContentView: View {
             return String(format: "%.1f km", distance / 1000)
         }
     }
+}
+
+// MARK: - Global Routing Helpers
+private func fetchRouteOptions(
+    start: CLLocationCoordinate2D, end: CLLocationCoordinate2D, type: MKDirectionsTransportType
+) async -> (coords: [CLLocationCoordinate2D], steps: [SimpleRouteStep], time: TimeInterval, dist: Double)? {
+    let startItem = MKMapItem(placemark: MKPlacemark(coordinate: start))
+    let endItem = MKMapItem(placemark: MKPlacemark(coordinate: end))
+    
+    let req = MKDirections.Request()
+    req.source = startItem
+    req.destination = endItem
+    req.transportType = type
+    let directions = MKDirections(request: req)
+    do {
+        let res = try await directions.calculate()
+        if let route = res.routes.first {
+            var coords = [CLLocationCoordinate2D](repeating: kCLLocationCoordinate2DInvalid, count: route.polyline.pointCount)
+            route.polyline.getCoordinates(&coords, range: NSRange(location: 0, length: route.polyline.pointCount))
+            
+            var routeSteps = route.steps.map { SimpleRouteStep(instructions: $0.instructions) }.filter { !$0.instructions.isEmpty }
+            if routeSteps.isEmpty {
+                routeSteps = [SimpleRouteStep(instructions: "Follow route")]
+            }
+            return (coords, routeSteps, route.expectedTravelTime, route.distance)
+        }
+    } catch {
+        print("Failed to calculate route: \(error)")
+    }
+    return nil
 }
